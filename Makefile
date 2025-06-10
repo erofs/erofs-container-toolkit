@@ -4,7 +4,7 @@ GO111MODULE_VALUE=auto
 PREFIX ?= $(CURDIR)/out/
 CMD_BINARIES=$(addprefix $(PREFIX),$(CMD))
 
-CMD=ctr-erofs
+CMD=ctr-erofs containerd-erofs-grpc
 
 all: build
 
@@ -14,6 +14,9 @@ FORCE:
 
 ctr-erofs: FORCE
 	cd cmd/ ; GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) $(GO_LD_FLAGS) -v ./ctr-erofs
+
+containerd-erofs-grpc: FORCE
+	cd cmd/ ; GO111MODULE=$(GO111MODULE_VALUE) go build -o $(PREFIX)$@ $(GO_BUILD_FLAGS) $(GO_LD_FLAGS) -v ./containerd-erofs-grpc
 
 install:
 	@echo "$@"
