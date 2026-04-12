@@ -19,12 +19,6 @@ snapshotter:
 
   [plugins."io.containerd.differ.v1.erofs"]
     mkfs_options = ["--sort=none"]
-
-  [[plugins."io.containerd.transfer.v1.local".unpack_config]]
-    differ = "erofs"
-    platform = "linux/amd64"
-    snapshotter = "erofs"
-    layer_types = ["application/vnd.erofs"]
 ```
 
 ### `ctr-erofs` tool

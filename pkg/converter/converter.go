@@ -9,10 +9,12 @@ import (
 	"os/exec"
 	"sync"
 
+	digest "github.com/opencontainers/go-digest"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/images/converter"
 	"github.com/containerd/containerd/v2/core/images/converter/uncompress"
+	"github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/containerd/containerd/v2/pkg/labels"
 	"github.com/containerd/errdefs"
 	"github.com/containerd/log"
@@ -20,9 +22,10 @@ import (
 )
 
 type options struct {
-	uuid          string
-	compressors   string
-	extraMkfsOpts string
+	uuid           string
+	compressors    string
+	extraMkfsOpts  string
+	layerMediaType string
 }
 
 type Option func(o *options) error
@@ -44,6 +47,13 @@ func WithUUID(uuid string) Option {
 func WithExtraMkfsOption(extraMkfsOpts string) Option {
 	return func(o *options) error {
 		o.extraMkfsOpts = extraMkfsOpts
+		return nil
+	}
+}
+
+func WithLayerMediaType(mediaType string) Option {
+	return func(o *options) error {
+		o.layerMediaType = mediaType
 		return nil
 	}
 }
@@ -160,7 +170,14 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 			return nil, err
 		}
 
-		n, err := io.Copy(w, blob)
+		compressed, errOpen := compression.CompressStream(w, compression.Zstd)
+		if errOpen != nil {
+			return nil, fmt.Errorf("failed to get compressed stream: %w", errOpen)
+		}
+
+		dgstr := digest.SHA256.Digester()
+		_, err = io.Copy(io.MultiWriter(compressed, dgstr.Hash()), blob)
+		compressed.Close()
 		if err != nil {
 			return nil, err
 		}
@@ -169,8 +186,8 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 		}
 
 		// update diffID label
-		labelz[labels.LabelUncompressed] = w.Digest().String()
-		if err = w.Commit(ctx, n, "", content.WithLabels(labelz)); err != nil && !errdefs.IsAlreadyExists(err) {
+		labelz[labels.LabelUncompressed] = dgstr.Digest().String()
+		if err = w.Commit(ctx, 0, w.Digest(), content.WithLabels(labelz)); err != nil && !errdefs.IsAlreadyExists(err) {
 			return nil, err
 		}
 		if err := w.Close(); err != nil {
@@ -178,9 +195,19 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 		}
 
 		newDesc := desc
-		newDesc.MediaType = "application/vnd.erofs"
-		newDesc.Digest = w.Digest()
-		newDesc.Size = n
+		if opts.layerMediaType != "" {
+			newDesc.MediaType = opts.layerMediaType
+		} else {
+			newDesc.MediaType = "application/vnd.erofs.layer.v1+zstd"
+		}
+
+		info, err2 := cs.Info(ctx, w.Digest())
+		if err2 != nil {
+				return nil, fmt.Errorf("failed to get info from content store: %w", err2)
+		}
+
+		newDesc.Digest = info.Digest
+		newDesc.Size = info.Size
 		return &newDesc, nil
 	}
 }

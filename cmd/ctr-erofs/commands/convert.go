@@ -61,6 +61,10 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			Name:  "erofs-mkfs-options",
 			Usage: "Extra mkfs options applied when converting EROFS layers. (e.g. '-Efragments,dedupe')",
 		},
+		&cli.StringFlag{
+			Name:  "erofs-layer-mediatype",
+			Usage: "Specify EROFS native layer media type (default: application/vnd.erofs.layer.v1)",
+		},
 		// generic flags
 		&cli.BoolFlag{
 			Name:  "uncompress",
