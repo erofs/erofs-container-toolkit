@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	EROFSLayerMediaType = "application/vnd.erofs.layer.v1"
+	EROFSLayerMediaType     = "application/vnd.erofs.layer.v1"
+	EROFSManifestAnnotation = "containerd.io/snapshot/erofs.native-image.manifest.digest"
 )
 
 type options struct {
@@ -180,7 +181,6 @@ func LayerConvertFunc(opt ...Option) converter.ConvertFunc {
 		if err := w.Close(); err != nil {
 			return nil, err
 		}
-
 		newDesc := desc
 		newDesc.MediaType = EROFSLayerMediaType
 		newDesc.Digest = w.Digest()
