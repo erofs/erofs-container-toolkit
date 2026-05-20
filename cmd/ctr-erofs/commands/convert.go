@@ -53,6 +53,10 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			Name:  "erofs",
 			Usage: "Convert docker or OCI layers to EROFS native layers. Should be used in conjunction with '--oci'",
 		},
+		&cli.BoolFlag{
+			Name:  "erofs-dual",
+			Usage: "Generate a dual-manifest index with both legacy and EROFS manifests. Should be used in conjunction with '--oci'",
+		},
 		&cli.StringFlag{
 			Name:  "erofs-compressors",
 			Usage: "Specify compression algorithm list when converting EROFS layers",
@@ -110,19 +114,36 @@ When '--all-platforms' is given all images in a manifest list must be available.
 		convertOpts = append(convertOpts, converter.WithPlatform(platformMC))
 
 		var layerConvertFunc converter.ConvertFunc
+		var indexConvertFunc converter.ConvertFunc
 		var finalize func(ctx gocontext.Context, cs content.Store, ref string, desc *ocispec.Descriptor) (*images.Image, error)
-		if context.Bool("erofs") {
+		erofsMode := context.Bool("erofs")
+		erofsDualMode := context.Bool("erofs-dual")
+		if erofsMode && erofsDualMode {
+			return errors.New("options --erofs and --erofs-dual are mutually exclusive")
+		}
+		if erofsMode || erofsDualMode {
 			Opts := []convert.Option{
 				convert.WithCompressors(context.String("erofs-compressors")),
 				convert.WithExtraMkfsOption(context.String("erofs-mkfs-options")),
 			}
 
-			layerConvertFunc = convert.LayerConvertFunc(Opts...)
-			if !context.Bool("oci") {
-				log.L.Warn("option --erofs should be used in conjunction with --oci")
-			}
 			if context.Bool("uncompress") {
-				return errors.New("option --erofs conflicts with --uncompress")
+				return errors.New("options --erofs/--erofs-dual conflict with --uncompress")
+			}
+
+			if erofsMode {
+				if !context.Bool("oci") {
+					log.L.Warn("option --erofs should be used in conjunction with --oci")
+				}
+				layerConvertFunc = convert.LayerConvertFunc(Opts...)
+			} else {
+				if !context.Bool("oci") {
+					return errors.New("option --erofs-dual must be used in conjunction with --oci")
+				}
+				indexConvertFunc = func(ctx gocontext.Context, cs content.Store, desc ocispec.Descriptor) (*ocispec.Descriptor, error) {
+					manifestsConverter := convert.NewManifestsConverter(cs, platformMC, context.Bool("oci"), Opts...)
+					return manifestsConverter.Convert(ctx, desc)
+				}
 			}
 		}
 
@@ -134,7 +155,9 @@ When '--all-platforms' is given all images in a manifest list must be available.
 			convertOpts = append(convertOpts, converter.WithDockerToOCI(true))
 		}
 
-		if layerConvertFunc != nil {
+		if indexConvertFunc != nil {
+			convertOpts = append(convertOpts, converter.WithIndexConvertFunc(indexConvertFunc))
+		} else if layerConvertFunc != nil {
 			convertOpts = append(convertOpts, converter.WithLayerConvertFunc(layerConvertFunc))
 		}
 
